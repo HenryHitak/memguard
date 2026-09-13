@@ -457,12 +457,25 @@ function Invoke-Overlay {
     $rowInfo = {
         param($name)
         if (-not $script:descCache.ContainsKey($name)) {
-            $desc = ''; $co = ''
+            $desc = ''; $co = ''; $path = ''
             try {
                 $pp = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($pp) { $desc = [string]$pp.Description; $co = [string]$pp.Company }
+                if ($pp) { $desc = [string]$pp.Description; $co = [string]$pp.Company; try { $path = [string]$pp.Path } catch { } }
             } catch { }
-            $script:descCache[$name] = [pscustomobject]@{ friendly = $(if ($desc) { $desc } else { "$name.exe" }); company = $co }
+            $ln = $name.ToLower(); $pl = $path.ToLower(); $cat = 'App'
+            $browsers = 'chrome msedge firefox brave whale opera vivaldi arc iexplore'
+            $office = 'winword excel powerpnt outlook onenote onedrive hwp acrobat acrord32 notepad notepad++ wordpad'
+            $dev = 'code devenv node python python3 java git powershell pwsh cmd windowsterminal conhost docker rider pycharm goland idea sublime_text'
+            $comms = 'discord slack teams kakaotalk telegram whatsapp zoom skype line messenger'
+            $media = 'spotify vlc wmplayer potplayer foobar2000 musicbee itunes'
+            $games = 'leagueclient leagueclientux leagueclientuxrender valorant valorant-win64-shipping riotclientservices vgc csgo cs2 dota2 steam steamwebhelper epicgameslauncher gog galaxyclient battle.net'
+            if ($browsers.Split(' ') -contains $ln) { $cat = 'Browser' }
+            elseif ($comms.Split(' ') -contains $ln) { $cat = 'Communication' }
+            elseif ($office.Split(' ') -contains $ln) { $cat = 'Office' }
+            elseif ($dev.Split(' ') -contains $ln) { $cat = 'Dev tools' }
+            elseif ($media.Split(' ') -contains $ln) { $cat = 'Media' }
+            elseif (($games.Split(' ') -contains $ln) -or ($pl -match 'steamapps|epic games|gog|riot games|battle\.net')) { $cat = 'Game' }
+            $script:descCache[$name] = [pscustomobject]@{ friendly = $(if ($desc) { $desc } else { "$name.exe" }); company = $co; category = $cat }
         }
         $script:descCache[$name]
     }
@@ -514,9 +527,10 @@ function Invoke-Overlay {
         $rowHost.Children.Clear()
         foreach ($r in $allRows) {
             $info = & $rowInfo $r.Name
-            if ($Protected -contains $r.Name) { $tag = 'SYSTEM - protected'; $tagCol = '#7D8998'; $safe = 'System process - never trimmed' }
-            elseif ($script:target -and $r.Name -eq $script:target) { $tag = 'GAME - kept smooth'; $tagCol = '#58A6FF'; $safe = 'Your game - kept out of trim' }
-            else { $tag = 'TRIM OK'; $tagCol = '#3FB950'; $safe = 'Safe to trim - frees RAM now, reloads on next use' }
+            if ($Protected -contains $r.Name) { $tag = 'System - protected'; $tagCol = '#7D8998'; $safe = 'System process - never trimmed' }
+            elseif ($script:target -and $r.Name -eq $script:target) { $tag = 'Game (active) - kept'; $tagCol = '#58A6FF'; $safe = 'Your game - kept out of trim' }
+            elseif ($info.category -eq 'Game') { $tag = 'Game'; $tagCol = '#58A6FF'; $safe = 'Game - safe to trim when not playing' }
+            else { $tag = "$($info.category) - trim OK"; $tagCol = '#3FB950'; $safe = 'Safe to trim - frees RAM now, reloads on next use' }
 
             $g = New-Object Windows.Controls.Grid; $g.Margin = '0,0,0,6'
             $tip = $info.friendly; if ($info.company) { $tip += "  -  $($info.company)" }
