@@ -57,6 +57,8 @@ public struct NID {
 }
 [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)]
 public static extern bool Shell_NotifyIcon(int msg, ref NID d);
+[System.Runtime.InteropServices.DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern uint RegisterWindowMessage(string msg);
 "@
 
 # Consoles/shells/browsers are never the game - if one is in front, keep the previous pick.
@@ -462,10 +464,13 @@ function Invoke-Overlay {
             $d.uFlags = 7; $d.uCallbackMessage = $WM_TRAY; $d.hIcon = $ico.Handle; $d.szTip = 'MEMGUARD'
             $script:nid = $d
             [void][Sh.Tray]::Shell_NotifyIcon(0, [ref]$script:nid)
+            $script:WM_TBCREATED = [Sh.Tray]::RegisterWindowMessage('TaskbarCreated')
             $src = [Windows.Interop.HwndSource]::FromHwnd($hwnd)
             $src.AddHook([Windows.Interop.HwndSourceHook]{
                     param($h, $m, $wp, $lp, $handled)
-                    if ($m -eq 0x8001) {
+                    if ($script:WM_TBCREATED -and $m -eq $script:WM_TBCREATED) {
+                        [void][Sh.Tray]::Shell_NotifyIcon(0, [ref]$script:nid)
+                    } elseif ($m -eq 0x8001) {
                         $ev = $lp.ToInt32()
                         if ($ev -eq 0x203 -or $ev -eq 0x202) { & $restore }
                         elseif ($ev -eq 0x205) { $trayMenu.IsOpen = $true }
