@@ -462,11 +462,7 @@ function Invoke-Overlay {
                 $pp = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($pp) { $desc = [string]$pp.Description; $co = [string]$pp.Company }
             } catch { }
-            $line = if ($desc) { $desc } else { "$name.exe" }
-            if ($co) { $line += "  -  $co" }
-            if ($Protected -contains $name) { $line += "`nSystem process - protected, never trimmed" }
-            else { $line += "`nSafe to trim: frees its RAM now; the app reloads from disk (brief pause) next time you use it" }
-            $script:descCache[$name] = $line
+            $script:descCache[$name] = [pscustomobject]@{ friendly = $(if ($desc) { $desc } else { "$name.exe" }); company = $co }
         }
         $script:descCache[$name]
     }
@@ -517,28 +513,35 @@ function Invoke-Overlay {
         $listHdr.Text = "TOP PROCESSES ($($allRows.Count))"
         $rowHost.Children.Clear()
         foreach ($r in $allRows) {
-            $g = New-Object Windows.Controls.Grid; $g.Margin = '0,0,0,4'
-            $g.ToolTip = (& $rowInfo $r.Name)
+            $info = & $rowInfo $r.Name
+            if ($Protected -contains $r.Name) { $tag = 'SYSTEM - protected'; $tagCol = '#7D8998'; $safe = 'System process - never trimmed' }
+            elseif ($script:target -and $r.Name -eq $script:target) { $tag = 'GAME - kept smooth'; $tagCol = '#58A6FF'; $safe = 'Your game - kept out of trim' }
+            else { $tag = 'TRIM OK'; $tagCol = '#3FB950'; $safe = 'Safe to trim - frees RAM now, reloads on next use' }
+
+            $g = New-Object Windows.Controls.Grid; $g.Margin = '0,0,0,6'
+            $tip = $info.friendly; if ($info.company) { $tip += "  -  $($info.company)" }
+            $g.ToolTip = "$tip`n$safe"
             $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = '*'
             $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = 'Auto'
             $c2 = New-Object Windows.Controls.ColumnDefinition; $c2.Width = 'Auto'
             [void]$g.ColumnDefinitions.Add($c0); [void]$g.ColumnDefinitions.Add($c1); [void]$g.ColumnDefinitions.Add($c2)
 
-            $n = New-Object Windows.Controls.TextBlock
-            $n.Text = $r.Name; $n.Foreground = '#C9D1D9'; $n.FontSize = 12
-            $n.TextTrimming = 'CharacterEllipsis'; [Windows.Controls.Grid]::SetColumn($n, 0)
+            $np = New-Object Windows.Controls.StackPanel; [Windows.Controls.Grid]::SetColumn($np, 0)
+            $nn = New-Object Windows.Controls.TextBlock; $nn.Text = $info.friendly; $nn.Foreground = '#E6EDF3'; $nn.FontSize = 12; $nn.TextTrimming = 'CharacterEllipsis'
+            $tg = New-Object Windows.Controls.TextBlock; $tg.Text = $tag; $tg.Foreground = $tagCol; $tg.FontSize = 9
+            [void]$np.Children.Add($nn); [void]$np.Children.Add($tg)
 
             $m = New-Object Windows.Controls.TextBlock
             $m.Text = (& $fmt $r.MB); $m.Foreground = if ($r.MB -ge 1000) { '#F85149' } elseif ($r.MB -ge 300) { '#E3B341' } else { '#7D8998' }
-            $m.FontSize = 12; $m.Margin = '8,0,8,0'; [Windows.Controls.Grid]::SetColumn($m, 1)
+            $m.FontSize = 12; $m.Margin = '8,0,8,0'; $m.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($m, 1)
 
             $k = New-Object Windows.Controls.Button
             $k.Content = 'END'; $k.FontSize = 10; $k.Foreground = '#F0A0A8'; $k.Background = '#1A1418'
-            $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $r.Name
+            $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $r.Name; $k.VerticalAlignment = 'Center'
             [Windows.Controls.Grid]::SetColumn($k, 2)
             $k.Add_Click({ [void](Invoke-KillByName -Name $this.Tag); & $refresh }.GetNewClosure())
 
-            [void]$g.Children.Add($n); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
+            [void]$g.Children.Add($np); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
             [void]$rowHost.Children.Add($g)
         }
     }
