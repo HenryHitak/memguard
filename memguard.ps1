@@ -448,7 +448,7 @@ function Invoke-Overlay {
     # Tray via Win32 Shell_NotifyIcon on the window's own HWND - WinForms NotifyIcon would not
     # register under this ps2exe/WPF host. Added on SourceInitialized once the HWND exists.
     $WM_TRAY = 0x8001
-    $restore = { $win.Show(); $win.Visibility = 'Visible'; $win.WindowState = 'Normal'; $win.Topmost = $false; $win.Topmost = $true; [void]$win.Activate() }
+    $restore = { if ($null -ne $script:onLeft) { $win.Left = $script:onLeft; $win.Top = $script:onTop }; $win.Topmost = $false; $win.Topmost = $true; [void]$win.Activate() }
     $trayMenu = New-Object Windows.Controls.ContextMenu; $trayMenu.Placement = 'MousePoint'
     $miShow = New-Object Windows.Controls.MenuItem; $miShow.Header = 'Show widget'; $miShow.Add_Click($restore); [void]$trayMenu.Items.Add($miShow)
     $miTrim = New-Object Windows.Controls.MenuItem; $miTrim.Header = 'Trim now'; $miTrim.Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })) }); [void]$trayMenu.Items.Add($miTrim)
@@ -625,7 +625,7 @@ function Invoke-Overlay {
             try { $script:showEvt.Dispose() } catch { }
         })
     # X hides the widget to the tray (icon stays); full quit is tray -> Exit.
-    $win.FindName('closeBtn').Add_Click({ $win.Hide() })
+    $win.FindName('closeBtn').Add_Click({ $script:onLeft = $win.Left; $script:onTop = $win.Top; $win.Left = -40000; $win.Top = -40000 })
     $win.FindName('trimBtn').Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })); & $refresh })
     $applyBtn.Add_Click({ if ($script:applyId) { [void](Invoke-Apply -Id $script:applyId); & $refresh } })
     $trimSelBtn = $win.FindName('trimSelBtn')
@@ -688,8 +688,7 @@ function Invoke-Overlay {
     $showTimer.Interval = [TimeSpan]::FromMilliseconds(400)
     $showTimer.Add_Tick({
             if ($script:showEvt.WaitOne(0)) {
-                $win.WindowState = 'Normal'; $win.Show(); $win.Visibility = 'Visible'
-                $win.Topmost = $false; $win.Topmost = $true; [void]$win.Activate()
+                & $restore
             }
         })
     $showTimer.Start()
