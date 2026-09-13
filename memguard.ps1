@@ -225,7 +225,7 @@ function Invoke-KillByName {
         if ($p.Id -eq $PID) { continue }
         try { $p.Kill(); $killed++ } catch { }
     }
-    [pscustomobject]@{ Name = $Name; Killed = $killed; Blocked = $false }
+    [pscustomobject]@{ Name = $Name; Killed = $killed; Blocked = $false }
 }
 
 # What else closes when you END this: how many processes share the name, and any child
@@ -545,7 +545,8 @@ function Invoke-Overlay {
         $blk = [char]0x2588; $emp = [char]0x2591
         $b5 = { param($v) $ff = [int][math]::Round(([double]$v) / 20); if ($ff -lt 0) { $ff = 0 } elseif ($ff -gt 5) { $ff = 5 }; ([string]$blk * $ff) + ([string]$emp * (5 - $ff)) }
         $tt = "CPU $(& $b5 $sys.cpu) $($sys.cpu)%`nGPU $(& $b5 $sys.gpu) $($sys.gpu)%`nRAM $(& $b5 $sys.ram) $($sys.ram)%`nSSD $(& $b5 $sys.ssd) $($sys.ssd)%"
-        try { $script:nid.szTip = $tt; [void][Sh.Tray]::Shell_NotifyIcon(1, [ref]$script:nid) } catch { }
+        # Self-heal: update the tooltip; if the icon is gone (MODIFY fails), re-add it.
+        try { $script:nid.szTip = $tt; if (-not [Sh.Tray]::Shell_NotifyIcon(1, [ref]$script:nid)) { [void][Sh.Tray]::Shell_NotifyIcon(0, [ref]$script:nid) } } catch { }
 
         # Suggestions change slowly - recompute every few ticks, not every second.
         if ($script:tickN % $sugEvery -eq 0) {
