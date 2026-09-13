@@ -454,6 +454,7 @@ function Invoke-Overlay {
     try { $hw = Get-HwInfo; $cpuCell.ToolTip = $hw.cpu; $gpuCell.ToolTip = $hw.gpu; $ramCell.ToolTip = $hw.ram; $ssdCell.ToolTip = $hw.ssd } catch { }
     $brush = { param($hex) [Windows.Media.BrushConverter]::new().ConvertFrom($hex) }
     $script:descCache = @{}
+    if ($null -eq $script:collapsed) { $script:collapsed = @{} }
     $rowInfo = {
         param($name)
         if (-not $script:descCache.ContainsKey($name)) {
@@ -537,29 +538,36 @@ function Invoke-Overlay {
             [pscustomobject]@{ cat = $_.Name; col = $_.Group[0].col; items = @($_.Group | Sort-Object MB -Descending); total = (($_.Group | Measure-Object MB -Sum).Sum) }
         } | Sort-Object total -Descending
         foreach ($grp in $groups) {
+            $isCol = [bool]$script:collapsed[$grp.cat]
+            $chev = if ($isCol) { [char]0x25B6 } else { [char]0x25BC }
             $hg = New-Object Windows.Controls.Grid
             $h0 = New-Object Windows.Controls.ColumnDefinition; $h0.Width = '*'
             $h1 = New-Object Windows.Controls.ColumnDefinition; $h1.Width = 'Auto'
             [void]$hg.ColumnDefinitions.Add($h0); [void]$hg.ColumnDefinitions.Add($h1)
-            $hl = New-Object Windows.Controls.TextBlock; $hl.Text = "$($grp.cat.ToUpper())  ($($grp.items.Count))"; $hl.Foreground = $grp.col; $hl.FontSize = 10; $hl.FontWeight = 'Bold'; [Windows.Controls.Grid]::SetColumn($hl, 0)
-            $ht = New-Object Windows.Controls.TextBlock; $ht.Text = (& $fmt $grp.total); $ht.Foreground = '#7D8998'; $ht.FontSize = 10; [Windows.Controls.Grid]::SetColumn($ht, 1)
+            $hl = New-Object Windows.Controls.TextBlock; $hl.Text = "$chev  $($grp.cat.ToUpper())  ($($grp.items.Count))"; $hl.Foreground = $grp.col; $hl.FontSize = 10; $hl.FontWeight = 'Bold'; [Windows.Controls.Grid]::SetColumn($hl, 0)
+            $ht = New-Object Windows.Controls.TextBlock; $ht.Text = (& $fmt $grp.total); $ht.Foreground = '#7D8998'; $ht.FontSize = 10; $ht.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($ht, 1)
             [void]$hg.Children.Add($hl); [void]$hg.Children.Add($ht)
-            $bd = New-Object Windows.Controls.Border; $bd.BorderBrush = '#1A222C'; $bd.BorderThickness = '0,0,0,1'; $bd.Padding = '0,0,0,3'; $bd.Margin = '0,8,0,4'; $bd.Child = $hg
+            $bd = New-Object Windows.Controls.Border; $bd.BorderBrush = '#1A222C'; $bd.BorderThickness = '0,0,0,1'; $bd.Padding = '0,2,0,3'; $bd.Margin = '0,8,0,4'; $bd.Child = $hg
+            $bd.Background = '#01000000'; $bd.Cursor = 'Hand'; $bd.Tag = $grp.cat
+            $bd.ToolTip = 'Click to collapse / expand'
+            $bd.Add_MouseLeftButtonDown({ param($s, $e); $script:collapsed[$s.Tag] = -not [bool]$script:collapsed[$s.Tag]; $e.Handled = $true; & $refresh })
             [void]$rowHost.Children.Add($bd)
-            foreach ($it in $grp.items) {
-                $g = New-Object Windows.Controls.Grid; $g.Margin = '0,3,0,3'
-                $tip = $it.friendly; if ($it.company) { $tip += "  -  $($it.company)" }
-                $g.ToolTip = "$tip`n$($it.safe)"
-                $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = '*'
-                $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = 'Auto'
-                $c2 = New-Object Windows.Controls.ColumnDefinition; $c2.Width = 'Auto'
-                [void]$g.ColumnDefinitions.Add($c0); [void]$g.ColumnDefinitions.Add($c1); [void]$g.ColumnDefinitions.Add($c2)
-                $nn = New-Object Windows.Controls.TextBlock; $nn.Text = $it.friendly; $nn.Foreground = '#C9D1D9'; $nn.FontSize = 12; $nn.TextTrimming = 'CharacterEllipsis'; $nn.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($nn, 0)
-                $m = New-Object Windows.Controls.TextBlock; $m.Text = (& $fmt $it.MB); $m.Foreground = $(if ($it.MB -ge 1000) { '#F85149' } elseif ($it.MB -ge 300) { '#E3B341' } else { '#7D8998' }); $m.FontSize = 12; $m.Margin = '8,0,8,0'; $m.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($m, 1)
-                $k = New-Object Windows.Controls.Button; $k.Content = 'END'; $k.FontSize = 10; $k.Foreground = '#F0A0A8'; $k.Background = '#1A1418'; $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $it.Name; $k.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($k, 2)
-                $k.Add_Click({ [void](Invoke-KillByName -Name $this.Tag); & $refresh }.GetNewClosure())
-                [void]$g.Children.Add($nn); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
-                [void]$rowHost.Children.Add($g)
+            if (-not $isCol) {
+                foreach ($it in $grp.items) {
+                    $g = New-Object Windows.Controls.Grid; $g.Margin = '0,3,0,3'
+                    $tip = $it.friendly; if ($it.company) { $tip += "  -  $($it.company)" }
+                    $g.ToolTip = "$tip`n$($it.safe)"
+                    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = '*'
+                    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = 'Auto'
+                    $c2 = New-Object Windows.Controls.ColumnDefinition; $c2.Width = 'Auto'
+                    [void]$g.ColumnDefinitions.Add($c0); [void]$g.ColumnDefinitions.Add($c1); [void]$g.ColumnDefinitions.Add($c2)
+                    $nn = New-Object Windows.Controls.TextBlock; $nn.Text = $it.friendly; $nn.Foreground = '#C9D1D9'; $nn.FontSize = 12; $nn.TextTrimming = 'CharacterEllipsis'; $nn.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($nn, 0)
+                    $m = New-Object Windows.Controls.TextBlock; $m.Text = (& $fmt $it.MB); $m.Foreground = $(if ($it.MB -ge 1000) { '#F85149' } elseif ($it.MB -ge 300) { '#E3B341' } else { '#7D8998' }); $m.FontSize = 12; $m.Margin = '8,0,8,0'; $m.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($m, 1)
+                    $k = New-Object Windows.Controls.Button; $k.Content = 'END'; $k.FontSize = 10; $k.Foreground = '#F0A0A8'; $k.Background = '#1A1418'; $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $it.Name; $k.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($k, 2)
+                    $k.Add_Click({ [void](Invoke-KillByName -Name $this.Tag); & $refresh }.GetNewClosure())
+                    [void]$g.Children.Add($nn); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
+                    [void]$rowHost.Children.Add($g)
+                }
             }
         }
     }
