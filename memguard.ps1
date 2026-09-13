@@ -452,9 +452,9 @@ function Invoke-Overlay {
     # Tray via Win32 Shell_NotifyIcon on the window's own HWND - WinForms NotifyIcon would not
     # register under this ps2exe/WPF host. Added on SourceInitialized once the HWND exists.
     $WM_TRAY = 0x8001
-    $restore = { if ($null -ne $script:onLeft) { $win.Left = $script:onLeft; $win.Top = $script:onTop }; $win.Topmost = $false; $win.Topmost = $true; [void]$win.Activate() }
+    $script:restore = { if ($null -ne $script:onLeft) { $win.Left = $script:onLeft; $win.Top = $script:onTop }; $win.Topmost = $false; $win.Topmost = $true; [void]$win.Activate() }
     $trayMenu = New-Object Windows.Controls.ContextMenu; $trayMenu.Placement = 'MousePoint'
-    $miShow = New-Object Windows.Controls.MenuItem; $miShow.Header = 'Show widget'; $miShow.Add_Click($restore); [void]$trayMenu.Items.Add($miShow)
+    $miShow = New-Object Windows.Controls.MenuItem; $miShow.Header = 'Show widget'; $miShow.Add_Click($script:restore); [void]$trayMenu.Items.Add($miShow)
     $miTrim = New-Object Windows.Controls.MenuItem; $miTrim.Header = 'Trim now'; $miTrim.Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })) }); [void]$trayMenu.Items.Add($miTrim)
     $miExit = New-Object Windows.Controls.MenuItem; $miExit.Header = 'Exit'; $miExit.Add_Click({ $win.Close() }); [void]$trayMenu.Items.Add($miExit)
     $win.Add_SourceInitialized({
@@ -476,7 +476,7 @@ function Invoke-Overlay {
                         [void][Sh.Tray]::Shell_NotifyIcon(0, [ref]$script:nid)
                     } elseif ($m -eq 0x8001) {
                         $ev = $lp.ToInt32()
-                        if ($ev -eq 0x203 -or $ev -eq 0x202) { & $restore }
+                        if ($ev -eq 0x203 -or $ev -eq 0x202) { & $script:restore }
                         elseif ($ev -eq 0x205) { $trayMenu.IsOpen = $true }
                     }
                     return [IntPtr]::Zero
@@ -713,7 +713,7 @@ function Invoke-Overlay {
     $showTimer.Interval = [TimeSpan]::FromMilliseconds(400)
     $showTimer.Add_Tick({
             if ($script:showEvt.WaitOne(0)) {
-                & $restore
+                & $script:restore
             }
         })
     $showTimer.Start()
