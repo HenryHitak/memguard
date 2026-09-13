@@ -527,7 +527,7 @@ function Invoke-Overlay {
     $col = { param($p) if ($p -ge 90) { '#F85149' } elseif ($p -ge 75) { '#E3B341' } else { '#3FB950' } }
     $fmt = { param($mb) if ($mb -ge 1024) { '{0:N1} GB' -f ($mb / 1024) } else { '{0:N0} MB' -f $mb } }
 
-    $refresh = {
+    $script:refresh = {
         $stat = Get-MemStat
         $tick = Invoke-GameTick -UsedPct $stat.UsedPct
         if ($tick.Trimmed) { $stat = Get-MemStat }
@@ -590,7 +590,7 @@ function Invoke-Overlay {
             $bd = New-Object Windows.Controls.Border; $bd.BorderBrush = '#1A222C'; $bd.BorderThickness = '0,0,0,1'; $bd.Padding = '0,2,0,3'; $bd.Margin = '0,8,0,4'; $bd.Child = $hg
             $bd.Background = '#01000000'; $bd.Cursor = 'Hand'; $bd.Tag = $grp.cat
             $bd.ToolTip = 'Click to collapse / expand'
-            $bd.Add_MouseLeftButtonDown({ param($s, $e); $script:collapsed[$s.Tag] = -not [bool]$script:collapsed[$s.Tag]; $e.Handled = $true; & $refresh })
+            $bd.Add_MouseLeftButtonDown({ param($s, $e); $script:collapsed[$s.Tag] = -not [bool]$script:collapsed[$s.Tag]; $e.Handled = $true; & $script:refresh })
             [void]$rowHost.Children.Add($bd)
             if (-not $isCol) {
                 foreach ($it in $grp.items) {
@@ -613,7 +613,7 @@ function Invoke-Overlay {
                             $msg = "End '$nm'?`n`n$($imp.Count) process(es) with this name will close."
                             if ($imp.Children.Count) { $msg += "`n`nPrograms it launched (these may close too):`n" + ($imp.Children -join ', ') }
                             $msg += "`n`nIf you have unsaved work in this app, save it first."
-                            if ([System.Windows.MessageBox]::Show($msg, 'MEMGUARD - end process', 'YesNo', 'Warning') -eq 'Yes') { [void](Invoke-KillByName -Name $nm); & $refresh }
+                            if ([System.Windows.MessageBox]::Show($msg, 'MEMGUARD - end process', 'YesNo', 'Warning') -eq 'Yes') { [void](Invoke-KillByName -Name $nm); & $script:refresh }
                         }.GetNewClosure())
                     [void]$g.Children.Add($cb); [void]$g.Children.Add($nn); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
                     [void]$rowHost.Children.Add($g)
@@ -630,10 +630,10 @@ function Invoke-Overlay {
         })
     # X hides the widget to the tray (icon stays); full quit is tray -> Exit.
     $win.FindName('closeBtn').Add_Click({ $script:onLeft = $win.Left; $script:onTop = $win.Top; $win.Left = -40000; $win.Top = -40000 })
-    $win.FindName('trimBtn').Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })); & $refresh })
-    $applyBtn.Add_Click({ if ($script:applyId) { [void](Invoke-Apply -Id $script:applyId); & $refresh } })
+    $win.FindName('trimBtn').Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })); & $script:refresh })
+    $applyBtn.Add_Click({ if ($script:applyId) { [void](Invoke-Apply -Id $script:applyId); & $script:refresh } })
     $trimSelBtn = $win.FindName('trimSelBtn')
-    $trimSelBtn.Add_Click({ $names = @($script:selected.Keys); if ($names.Count) { $rr = Invoke-TrimNames -Names $names; $noteText.Text = "trimmed $($rr.Trimmed) selected procs, freed $($rr.FreedMB) MB" } else { $noteText.Text = 'Select processes with the checkboxes first' }; & $refresh })
+    $trimSelBtn.Add_Click({ $names = @($script:selected.Keys); if ($names.Count) { $rr = Invoke-TrimNames -Names $names; $noteText.Text = "trimmed $($rr.Trimmed) selected procs, freed $($rr.FreedMB) MB" } else { $noteText.Text = 'Select processes with the checkboxes first' }; & $script:refresh })
     # Double-click = maximise to the work area (not over the taskbar) / restore; single drag = move.
     $script:restoreBounds = $null
     $win.Add_MouseLeftButtonDown({
@@ -683,13 +683,13 @@ function Invoke-Overlay {
     $script:wOp = [Math]::Round([Math]::Max(0.25, [Math]::Min(1.0, $script:wOp)), 2)
     $script:wScale = [Math]::Round([Math]::Max(0.6, [Math]::Min(2.0, $script:wScale)), 2)
     $root = $win.FindName('root')
-    $applyLook = {
+    $script:applyLook = {
         $win.Opacity = $script:wOp
         $root.LayoutTransform = New-Object Windows.Media.ScaleTransform $script:wScale, $script:wScale
     }
-    $saveLook = { @{ opacity = $script:wOp; scale = $script:wScale } | ConvertTo-Json -Compress | Set-Content $script:wSettings -Encoding UTF8 }
-    & $applyLook
-    & $refresh
+    $script:saveLook = { @{ opacity = $script:wOp; scale = $script:wScale } | ConvertTo-Json -Compress | Set-Content $script:wSettings -Encoding UTF8 }
+    & $script:applyLook
+    & $script:refresh
 
     # Plain wheel scrolls the process list (left unhandled so the ScrollViewer gets it).
     # Ctrl+wheel = widget size; Shift+wheel = transparency.
@@ -704,7 +704,7 @@ function Invoke-Overlay {
             } else {
                 return   # no modifier: let the list scroll
             }
-            & $applyLook; & $saveLook
+            & $script:applyLook; & $script:saveLook
             $e.Handled = $true
         })
 
@@ -720,7 +720,7 @@ function Invoke-Overlay {
 
     $timer = New-Object Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds([Math]::Max(1, $Interval))
-    $timer.Add_Tick($refresh)
+    $timer.Add_Tick($script:refresh)
     $timer.Start()
     [void]$win.ShowDialog()
 }
