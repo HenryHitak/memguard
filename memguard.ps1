@@ -46,6 +46,10 @@ public static extern IntPtr GetForegroundWindow();
 public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int pid);
 [DllImport("user32.dll", SetLastError=true)]
 public static extern bool DestroyIcon(IntPtr hIcon);
+[DllImport("user32.dll")]
+public static extern bool ReleaseCapture();
+[DllImport("user32.dll")]
+public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 '@
 
 Add-Type -Namespace Sh -Name Tray -MemberDefinition @"
@@ -634,6 +638,17 @@ function Invoke-Overlay {
     $script:restoreBounds = $null
     $win.Add_MouseLeftButtonDown({
             param($s, $e)
+            $pt = $e.GetPosition($win); $w = $win.ActualWidth; $h = $win.ActualHeight; $M = 8
+            $l = $pt.X -lt $M; $rt = $pt.X -gt ($w - $M); $tp = $pt.Y -lt $M; $bt = $pt.Y -gt ($h - $M)
+            $ht = 0
+            if ($tp -and $l) { $ht = 13 } elseif ($tp -and $rt) { $ht = 14 } elseif ($bt -and $l) { $ht = 16 } elseif ($bt -and $rt) { $ht = 17 }
+            elseif ($l) { $ht = 10 } elseif ($rt) { $ht = 11 } elseif ($tp) { $ht = 12 } elseif ($bt) { $ht = 15 }
+            if ($ht -ne 0) {
+                $hwnd = (New-Object Windows.Interop.WindowInteropHelper $win).Handle
+                [void][Mem.Psapi]::ReleaseCapture()
+                [void][Mem.Psapi]::SendMessage($hwnd, 0xA1, [IntPtr]$ht, [IntPtr]::Zero)
+                $e.Handled = $true; return
+            }
             if ($e.ClickCount -eq 2) {
                 if ($script:restoreBounds) {
                     $b = $script:restoreBounds; $script:restoreBounds = $null
@@ -646,6 +661,16 @@ function Invoke-Overlay {
             } else {
                 $win.DragMove()
             }
+        })
+    $win.Add_MouseMove({
+            param($s, $e)
+            $pt = $e.GetPosition($win); $w = $win.ActualWidth; $h = $win.ActualHeight; $M = 8
+            $l = $pt.X -lt $M; $rt = $pt.X -gt ($w - $M); $tp = $pt.Y -lt $M; $bt = $pt.Y -gt ($h - $M)
+            if (($tp -and $l) -or ($bt -and $rt)) { $win.Cursor = [Windows.Input.Cursors]::SizeNWSE }
+            elseif (($tp -and $rt) -or ($bt -and $l)) { $win.Cursor = [Windows.Input.Cursors]::SizeNESW }
+            elseif ($l -or $rt) { $win.Cursor = [Windows.Input.Cursors]::SizeWE }
+            elseif ($tp -or $bt) { $win.Cursor = [Windows.Input.Cursors]::SizeNS }
+            else { $win.Cursor = [Windows.Input.Cursors]::Arrow }
         })
 
     # Opacity + size are adjustable and persist across the auto-start relaunch.
