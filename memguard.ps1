@@ -223,7 +223,33 @@ function Invoke-KillByName {
         if ($p.Id -eq $PID) { continue }
         try { $p.Kill(); $killed++ } catch { }
     }
-    [pscustomobject]@{ Name = $Name; Killed = $killed; Blocked = $false }
+    [pscustomobject]@{ Name = $Name; Killed = $killed; Blocked = $false }
+}
+
+# What else closes when you END this: how many processes share the name, and any child
+# processes it spawned (those may close too). Helps avoid breaking a linked program.
+function Get-KillImpact {
+    param([string]$Name)
+    $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    $targets = @($all | Where-Object { ($_.Name -replace '\.exe$', '') -ieq $Name })
+    $procIds = @($targets.ProcessId)
+    $children = @($all | Where-Object { $procIds -contains $_.ParentProcessId -and $procIds -notcontains $_.ProcessId } |
+            ForEach-Object { ($_.Name -replace '\.exe$', '') } | Sort-Object -Unique)
+    [pscustomobject]@{ Count = $targets.Count; Children = $children }
+}
+
+# Trim only the named processes' working sets (multi-select trim).
+function Invoke-TrimNames {
+    param([string[]]$Names)
+    $before = (Get-MemStat).FreeMB; $ok = 0
+    foreach ($nm in $Names) {
+        foreach ($pp in Get-Process -Name $nm -ErrorAction SilentlyContinue) {
+            if ($pp.Id -eq $PID) { continue }
+            $h = [Mem.Psapi]::OpenProcess($OPEN_FOR_TRIM, $false, $pp.Id)
+            if ($h -ne [IntPtr]::Zero) { [void][Mem.Psapi]::EmptyWorkingSet($h); [void][Mem.Psapi]::CloseHandle($h); $ok++ }
+        }
+    }
+    [pscustomobject]@{ Trimmed = $ok; FreedMB = (Get-MemStat).FreeMB - $before }
 }
 
 # Rule-based memory-management advisor. Read-only inspection -> concrete suggestions.
@@ -385,10 +411,13 @@ $OverlayXaml = @'
       </Border>      <TextBlock x:Name="listHdr" DockPanel.Dock="Top" Foreground="#7D8998" FontSize="10" Margin="0,0,0,4"/>
       <TextBlock x:Name="noteText" DockPanel.Dock="Bottom" Foreground="#D2A8FF" FontSize="10" TextWrapping="Wrap" Margin="0,8,0,0"/>
       <Grid DockPanel.Dock="Bottom" Margin="0,2,0,0">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <Button x:Name="trimBtn" Grid.Column="0" Content="TRIM NOW" Height="30" Foreground="#E6EDF3" Background="#1B2430"
                 BorderBrush="#2B3644" BorderThickness="1" FontWeight="SemiBold" FontSize="12" Cursor="Hand"/>
-        <Button x:Name="applyBtn" Grid.Column="1" Content="APPLY FIX" Height="30" Margin="8,0,0,0" Padding="12,0,12,0"
+        <Button x:Name="trimSelBtn" Grid.Column="1" Content="TRIM SELECTED" Height="30" Margin="8,0,0,0" Padding="10,0,10,0"
+                Foreground="#E6EDF3" Background="#1B2430" BorderBrush="#2B3644" BorderThickness="1"
+                FontWeight="SemiBold" FontSize="12" Cursor="Hand"/>
+        <Button x:Name="applyBtn" Grid.Column="2" Content="APPLY FIX" Height="30" Margin="8,0,0,0" Padding="12,0,12,0"
                 Foreground="#5FDC8A" Background="#12301C" BorderBrush="#1F5130" BorderThickness="1"
                 FontWeight="SemiBold" FontSize="12" Cursor="Hand" Visibility="Collapsed"/>
       </Grid>
@@ -455,6 +484,7 @@ function Invoke-Overlay {
     $brush = { param($hex) [Windows.Media.BrushConverter]::new().ConvertFrom($hex) }
     $script:descCache = @{}
     if ($null -eq $script:collapsed) { $script:collapsed = @{} }
+    if ($null -eq $script:selected) { $script:selected = @{} }
     $rowInfo = {
         param($name)
         if (-not $script:descCache.ContainsKey($name)) {
@@ -557,15 +587,25 @@ function Invoke-Overlay {
                     $g = New-Object Windows.Controls.Grid; $g.Margin = '0,3,0,3'
                     $tip = $it.friendly; if ($it.company) { $tip += "  -  $($it.company)" }
                     $g.ToolTip = "$tip`n$($it.safe)"
-                    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = '*'
-                    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = 'Auto'
+                    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'
+                    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = '*'
                     $c2 = New-Object Windows.Controls.ColumnDefinition; $c2.Width = 'Auto'
-                    [void]$g.ColumnDefinitions.Add($c0); [void]$g.ColumnDefinitions.Add($c1); [void]$g.ColumnDefinitions.Add($c2)
-                    $nn = New-Object Windows.Controls.TextBlock; $nn.Text = $it.friendly; $nn.Foreground = '#C9D1D9'; $nn.FontSize = 12; $nn.TextTrimming = 'CharacterEllipsis'; $nn.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($nn, 0)
-                    $m = New-Object Windows.Controls.TextBlock; $m.Text = (& $fmt $it.MB); $m.Foreground = $(if ($it.MB -ge 1000) { '#F85149' } elseif ($it.MB -ge 300) { '#E3B341' } else { '#7D8998' }); $m.FontSize = 12; $m.Margin = '8,0,8,0'; $m.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($m, 1)
-                    $k = New-Object Windows.Controls.Button; $k.Content = 'END'; $k.FontSize = 10; $k.Foreground = '#F0A0A8'; $k.Background = '#1A1418'; $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $it.Name; $k.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($k, 2)
-                    $k.Add_Click({ [void](Invoke-KillByName -Name $this.Tag); & $refresh }.GetNewClosure())
-                    [void]$g.Children.Add($nn); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
+                    $c3 = New-Object Windows.Controls.ColumnDefinition; $c3.Width = 'Auto'
+                    [void]$g.ColumnDefinitions.Add($c0); [void]$g.ColumnDefinitions.Add($c1); [void]$g.ColumnDefinitions.Add($c2); [void]$g.ColumnDefinitions.Add($c3)
+                    $cb = New-Object Windows.Controls.CheckBox; $cb.IsChecked = [bool]$script:selected[$it.Name]; $cb.Tag = $it.Name; $cb.VerticalAlignment = 'Center'; $cb.Margin = '0,0,7,0'; [Windows.Controls.Grid]::SetColumn($cb, 0)
+                    $cb.Add_Click({ if ($this.IsChecked) { $script:selected[$this.Tag] = $true } else { [void]$script:selected.Remove($this.Tag) } })
+                    $nn = New-Object Windows.Controls.TextBlock; $nn.Text = $it.friendly; $nn.Foreground = '#C9D1D9'; $nn.FontSize = 12; $nn.TextTrimming = 'CharacterEllipsis'; $nn.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($nn, 1)
+                    $m = New-Object Windows.Controls.TextBlock; $m.Text = (& $fmt $it.MB); $m.Foreground = $(if ($it.MB -ge 1000) { '#F85149' } elseif ($it.MB -ge 300) { '#E3B341' } else { '#7D8998' }); $m.FontSize = 12; $m.Margin = '8,0,8,0'; $m.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($m, 2)
+                    $k = New-Object Windows.Controls.Button; $k.Content = 'END'; $k.FontSize = 10; $k.Foreground = '#F0A0A8'; $k.Background = '#1A1418'; $k.BorderBrush = '#3A2530'; $k.Padding = '6,2,6,2'; $k.Cursor = 'Hand'; $k.Tag = $it.Name; $k.VerticalAlignment = 'Center'; [Windows.Controls.Grid]::SetColumn($k, 3)
+                    $k.Add_Click({
+                            $nm = $this.Tag
+                            $imp = Get-KillImpact -Name $nm
+                            $msg = "End '$nm'?`n`n$($imp.Count) process(es) with this name will close."
+                            if ($imp.Children.Count) { $msg += "`n`nPrograms it launched (these may close too):`n" + ($imp.Children -join ', ') }
+                            $msg += "`n`nIf you have unsaved work in this app, save it first."
+                            if ([System.Windows.MessageBox]::Show($msg, 'MEMGUARD - end process', 'YesNo', 'Warning') -eq 'Yes') { [void](Invoke-KillByName -Name $nm); & $refresh }
+                        }.GetNewClosure())
+                    [void]$g.Children.Add($cb); [void]$g.Children.Add($nn); [void]$g.Children.Add($m); [void]$g.Children.Add($k)
                     [void]$rowHost.Children.Add($g)
                 }
             }
@@ -582,6 +622,8 @@ function Invoke-Overlay {
     $win.FindName('closeBtn').Add_Click({ $win.Hide() })
     $win.FindName('trimBtn').Add_Click({ [void](Invoke-Trim -Keep @($script:target | Where-Object { $_ })); & $refresh })
     $applyBtn.Add_Click({ if ($script:applyId) { [void](Invoke-Apply -Id $script:applyId); & $refresh } })
+    $trimSelBtn = $win.FindName('trimSelBtn')
+    $trimSelBtn.Add_Click({ $names = @($script:selected.Keys); if ($names.Count) { $rr = Invoke-TrimNames -Names $names; $noteText.Text = "trimmed $($rr.Trimmed) selected procs, freed $($rr.FreedMB) MB" } else { $noteText.Text = 'Select processes with the checkboxes first' }; & $refresh })
     # Double-click = maximise to the work area (not over the taskbar) / restore; single drag = move.
     $script:restoreBounds = $null
     $win.Add_MouseLeftButtonDown({
