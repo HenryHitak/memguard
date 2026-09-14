@@ -392,7 +392,7 @@ $OverlayXaml = @'
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False" Title="MEMGUARD"
-        SizeToContent="Manual" Width="340" Height="600" MinWidth="300" MinHeight="380" Left="40" Top="40" FontFamily="Segoe UI">
+        SizeToContent="Manual" Width="340" Height="600" MinWidth="300" MinHeight="380" Left="40" Top="40" FontFamily="Segoe UI">
   <Window.Resources>
     <Style TargetType="Button">
       <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -400,7 +400,6 @@ $OverlayXaml = @'
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Border x:Name="bd" CornerRadius="7" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="True">
-              <Border.RenderTransform><ScaleTransform x:Name="sc" ScaleX="1" ScaleY="1"/></Border.RenderTransform>
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
@@ -410,8 +409,9 @@ $OverlayXaml = @'
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="bd" Property="Opacity" Value="0.72"/>
-                <Setter TargetName="sc" Property="ScaleX" Value="0.94"/>
-                <Setter TargetName="sc" Property="ScaleY" Value="0.94"/>
+                <Setter TargetName="bd" Property="RenderTransform">
+                  <Setter.Value><ScaleTransform ScaleX="0.94" ScaleY="0.94"/></Setter.Value>
+                </Setter>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="bd" Property="Opacity" Value="0.4"/>
@@ -421,7 +421,7 @@ $OverlayXaml = @'
         </Setter.Value>
       </Setter>
     </Style>
-  </Window.Resources>
+  </Window.Resources>
   <Border x:Name="root" CornerRadius="14" Background="#E60B0F14" BorderBrush="#332B3644" BorderThickness="1" Padding="16">
     <DockPanel LastChildFill="True">
       <Grid DockPanel.Dock="Top">
